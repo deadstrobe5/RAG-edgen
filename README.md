@@ -13,7 +13,15 @@ To run this project, you will need:
 
 Follow these steps to get your RAG system up and running:
 
-### 1. Start the Qdrant Database
+### 1. Install Dependencies
+
+Run this command to install all dependencies:
+
+```bash
+pip install requirements.txt
+```
+
+### 2. Start the Qdrant Database
 
 Run the Qdrant vector search engine using Docker:
 
@@ -23,7 +31,7 @@ docker run -p 6333:6333 qdrant/qdrant
 
 This command pulls the Qdrant image from Docker Hub (if not already locally available), starts a container, and exposes the service on port 6333.
 
-### 2. Start the Unstructured-API Server
+### 3. Start the Unstructured-API Server
 
 Pull and run the unstructured-api server using Docker:
 
@@ -32,7 +40,7 @@ docker pull downloads.unstructured.io/unstructured-io/unstructured-api:latest
 docker run -p 8000:8000 -d --rm --name unstructured-api downloads.unstructured.io/unstructured-io/unstructured-api:latest --port 8000 --host 0.0.0.0
 ```
 
-### 3. Running Your RAG Implementation
+### 4. Running Your RAG Implementation
 
 After ensuring that both the Qdrant database and the unstructured-API server are running, you can start your RAG system. Ensure you have all necessary Python dependencies installed, and run your main script:
 
