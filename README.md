@@ -5,6 +5,7 @@ This repository contains the implementation of the Retriever-And-Generator (RAG)
 ## Prerequisites
 To run this project, you will need:
 
+- EdgenAI must be running on your machine.
 - Docker installed on your machine.
 - Python 3 installed on your machine.
 
