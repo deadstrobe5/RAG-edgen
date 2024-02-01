@@ -18,7 +18,7 @@ Follow these steps to get your RAG system up and running:
 Run this command to install all dependencies:
 
 ```bash
-pip install requirements.txt
+pip install -r requirements.txt
 ```
 
 ### 2. Start the Qdrant Database
