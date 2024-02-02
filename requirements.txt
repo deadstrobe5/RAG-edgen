@@ -1,5 +1,6 @@
+flask
+flask-socketio
 requests
 edgen
 canopy-sdk
-openai
 qdrant_client
