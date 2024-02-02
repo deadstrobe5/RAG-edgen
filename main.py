@@ -1,11 +1,11 @@
 import sys
 import requests
 import json
-from openai import OpenAI
-
-client = OpenAI(api_key="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")
+from edgen import Edgen
 import os
+import argparse
 
+client = Edgen()
 sys.path.insert(0, "canopy")
 sys.path.insert(0, "canopy/src")
 
@@ -17,9 +17,21 @@ from tests.unit.stubs.stub_dense_encoder import StubDenseEncoder
 from tests.unit.stubs.stub_chunker import StubChunker
 
 QDRANT_COLLECTION_NAME = "canopy--test_collection"
-FILE_PATH = "sibs.pdf"
-QUERY = "crypto asset"
-TOP_K = 20
+DEFAULT_FILE_PATH = "sibs.pdf"
+DEFAULT_QUERY = "What is a cyber asset anyway?"
+DEFAULT_TOP_K = 10
+
+# Initialize the argument parser
+parser = argparse.ArgumentParser(description="Process input for RAG.")
+parser.add_argument("--file_path", type=str, default=DEFAULT_FILE_PATH, help="The file path to process")
+parser.add_argument("--query", type=str, default=DEFAULT_QUERY, help="The query to process")
+parser.add_argument("--top_k", type=int, default=DEFAULT_TOP_K, help="The number of top results to return (default: 10)")
+args = parser.parse_args()
+
+# Assigning variables from arguments or default values
+FILE_PATH = args.file_path
+QUERY = args.query
+TOP_K = args.top_k
 
 
 # Function to check if Qdrant server is running
@@ -71,18 +83,25 @@ def fetch_documents_from_unstructured(file_path):
         print(f"Error fetching documents: {response.status_code}")
         return None
 
-def call_openai_api(prompt):
+def call_edgen(prompt):
     try:
-        response = client.chat.completions.create(model="gpt-3.5-turbo",  # Adjust the model as needed
-        messages=[{"role": "user", "content": prompt}])
-        
-        # Extract the content from the response
-        # Note: Adjust the path according to the actual response structure
-        content = response.choices[0].message.content
+        completion = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            stream=True
+            )
+
+        content = ""
+        for chunk in completion:
+            content += chunk.choices[0].delta.content
+
         print(content)
         return content.strip()
     except Exception as e:  # Catch a general exception as the specific OpenAIError is not available
-        print(f"Error calling OpenAI API: {e}")
+        print(f"Error calling EdgenAI API: {e}")
         return None
 
 def initialize_qdrant():
@@ -137,7 +156,7 @@ def main():
     )   
 
     # Call OpenAI API
-    vector_query = call_openai_api(prompt)
+    vector_query = call_edgen(prompt)
 
     # Qdrant vector db
     kb = initialize_qdrant()
@@ -165,7 +184,7 @@ def main():
 
     #print(context)
 
-
+    
     # Prepare prompt for LLM to generate the final response
     final_prompt = (
         "Based on the user's initial query, the following documents were retrieved:\n\n"
@@ -176,10 +195,11 @@ def main():
     )
 
     # Call OpenAI API for the final response
-    final_answer = call_openai_api(final_prompt)
+    final_answer = call_edgen(final_prompt)
 
     # Print LLM output
     print(f"LLM Response: {final_answer}")
+    
     
 
 # Run the main function
