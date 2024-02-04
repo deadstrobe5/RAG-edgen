@@ -101,9 +101,9 @@ def run_rag(prompt):
     kb = initialize_qdrant()
    
     # Create and insert documents
-    #json = fetch_documents_from_unstructured(FILE_PATH)
-    #docs = load_documents_from_json(json)
-    #kb.upsert(docs)
+    # json = fetch_documents_from_unstructured(FILE_PATH)
+    # docs = load_documents_from_json(json)
+    # kb.upsert(docs)
 
     
     
@@ -131,6 +131,7 @@ def run_rag(prompt):
         f"{context}\n"
         "Craft a response that integrates insights from the documents in a structured and informative manner."
     )
+    print("final_prompt:", final_prompt, "\n")
 
     return call_edgen(final_prompt)
 
@@ -280,7 +281,7 @@ def _corsify_actual_response(response, plain_text=False):
     resp.headers.add("Access-Control-Allow-Origin", "*")
     return resp
 
-def call_edgen(prompt):
+def call_edgen(prompt, stream=False):
     try:
         completion = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -288,14 +289,13 @@ def call_edgen(prompt):
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": prompt}
             ],
-            stream=True
+            stream=stream
             )
-
-        content = ""
-        for chunk in completion:
-            content += chunk.choices[0].delta.content
-
-        return content.strip()
+        
+        
+        content = completion.choices[0].message.content
+        
+        return content
     except Exception as e:  # Catch a general exception as the specific OpenAIError is not available
         print(f"Error calling EdgenAI API: {e}")
         return None
