@@ -7,6 +7,7 @@ import requests
 from edgen import Edgen
 import os
 from queue import Queue
+import time
 
 
 client = Edgen()
@@ -74,6 +75,7 @@ def stream_messages():
 
 
 def run_rag(prompt):
+    start = time.time()
     # Prepare prompt for LLM
     prompt = (
         "Objective: Process a natural language query to identify and extract its core informational intent, "
@@ -94,8 +96,12 @@ def run_rag(prompt):
     )
 
     # Call Edgen
+    start_time = time.time()
     vector_query = call_edgen(prompt)
     print(f"Vector query: {vector_query}")
+    end_time = time.time()
+    print(f"Time to create vectory query: {end_time - start_time} seconds")
+
 
     # Qdrant vector db
     kb = initialize_qdrant()
@@ -108,8 +114,11 @@ def run_rag(prompt):
     
     
     # Query the knowledge base
+    start_time = time.time()
     query = Query(text=vector_query, top_k=TOP_K)
     query_results = kb.query([query])
+    end_time = time.time()
+    print(f"Time to query db: {end_time - start_time} seconds")
 
     # Prepare data for LLM
     context = ""
@@ -132,9 +141,15 @@ def run_rag(prompt):
         "Craft a response that integrates insights from the documents in a structured and informative manner."
     )
     print("final_prompt:", final_prompt, "\n")
+    
+    start_time = time.time()
+    result = call_edgen(final_prompt)
+    end_time = time.time()
+    print(f"Time to process last prompt: {end_time - start_time} seconds")
 
-    return call_edgen(final_prompt)
+    print(f"Total time: {time.time() - start} seconds")
 
+    return result
     '''
     # Send data chunk by chunk
     chunk_stream = call_edgen_stream(final_prompt)
