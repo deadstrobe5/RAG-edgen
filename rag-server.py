@@ -1,81 +1,56 @@
-from flask import Flask, request, jsonify, make_response, Response, stream_with_context
-from threading import Thread
-import subprocess
-import json
 import sys
-import requests
-from edgen import Edgen
-import os
-from queue import Queue
-import time
-
-
-client = Edgen()
 sys.path.insert(0, "canopy")
 sys.path.insert(0, "canopy/src")
 
+from threading import Thread
+import asyncio
+import json
+import requests
+from edgen import Edgen
+import time
+from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.logger import logger
 from canopy.knowledge_base.qdrant.qdrant_knowledge_base import QdrantKnowledgeBase
 from canopy.models.data_models import Document, Query
 from canopy.knowledge_base.qdrant.constants import COLLECTION_NAME_PREFIX
 from tests.unit.stubs.stub_record_encoder import StubRecordEncoder
 from tests.unit.stubs.stub_dense_encoder import StubDenseEncoder
 from tests.unit.stubs.stub_chunker import StubChunker
+import asyncio
+
+
+app = FastAPI()
+client = Edgen()
+messages = asyncio.Queue()
+
 
 QDRANT_COLLECTION_NAME = "canopy--test_collection"
 FILE_PATH = "sibs.pdf"
 QUERY = "What is a cyber asset anyway?"
-TOP_K = 10
-
-messages = Queue()
-
-app = Flask(__name__)
-
-@app.route('/v1/chat/completions', methods=['POST', 'OPTIONS'])
-def chat_completions():
-    global QUERY
-    if request.method == 'OPTIONS':
-        return _build_cors_prelight_response()
-    elif request.method == 'POST':
-        data = request.json
-        QUERY = data.get('messages', '')[-1]["content"]
-        print(f"User input: {QUERY}")
-
-        # Get response from run_rag
-        response = run_rag(QUERY)
-
-        # If the response is a string (stdout from subprocess), return it as plain text
-        if isinstance(response, str):
-            return _corsify_actual_response(response, plain_text=True)
-        else:
-            # If response is not a string, it's an error case, return JSON
-            return _corsify_actual_response(jsonify(response))
-
-        '''
-        # Start run_rag in a separate thread so it doesn't block the response
-        thread1 = Thread(target=run_rag, args=(QUERY,))
-        thread1.start()
-
-        thread2 = Thread(target=stream_messages)
-        thread2.start()
-
-        # Stream response from the messages queue
-        return Response(stream_with_context(stream_messages()))
-        '''
+TOP_K = 20
 
 
-def stream_messages():
-    while True:
-        # Get the next message from the queue
-        chunk = messages.get()
-        print(chunk)
-        if chunk is None:
-            continue
-        # Yield the chunk as part of the response
-        yield chunk
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 
-def run_rag(prompt):
-    start = time.time()
+@app.post("/v1/chat/completions")
+async def chat_completions(request: Request):
+    data = await request.json()
+    QUERY = data.get('messages', '')[-1]["content"]
+    print(f"User input: {QUERY}")
+
+    return StreamingResponse(run_rag(QUERY), media_type="text/event-stream")
+
+
+async def run_rag(prompt):
     # Prepare prompt for LLM
     prompt = (
         "Objective: Process a natural language query to identify and extract its core informational intent, "
@@ -96,11 +71,8 @@ def run_rag(prompt):
     )
 
     # Call Edgen
-    start_time = time.time()
-    vector_query = call_edgen(prompt)
+    vector_query = await call_edgen(prompt)
     print(f"Vector query: {vector_query}")
-    end_time = time.time()
-    print(f"Time to create vectory query: {end_time - start_time} seconds")
 
 
     # Qdrant vector db
@@ -114,11 +86,8 @@ def run_rag(prompt):
     
     
     # Query the knowledge base
-    start_time = time.time()
     query = Query(text=vector_query, top_k=TOP_K)
     query_results = kb.query([query])
-    end_time = time.time()
-    print(f"Time to query db: {end_time - start_time} seconds")
 
     # Prepare data for LLM
     context = ""
@@ -142,28 +111,58 @@ def run_rag(prompt):
     )
     print("final_prompt:", final_prompt, "\n")
     
-    start_time = time.time()
-    result = call_edgen(final_prompt)
-    end_time = time.time()
-    print(f"Time to process last prompt: {end_time - start_time} seconds")
-
-    print(f"Total time: {time.time() - start} seconds")
-
-    return result
-    '''
-    # Send data chunk by chunk
-    chunk_stream = call_edgen_stream(final_prompt)
-    
+    """Call the Edgen API and stream the response."""
     try:
-        for chunk in chunk_stream:
-            # Decode bytes to string and put into messages queue
-            messages.put(chunk)
-    except Exception as e:
-        print(f"Error during streaming: {e}")
-        messages.put(json.dumps({"error": str(e)}))
-    '''
+        completion = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": final_prompt}
+            ],
+            stream=True
+        )
 
-def call_edgen_stream(prompt):
+        for chunk in completion:
+            
+            # Assuming chunk is an object with the structure you provided, construct the dictionary
+            chunk_dict = {
+                "choices": [
+                    {
+                        "delta": {
+                            "content":choice.delta.content,
+                        },
+                        "finish_reason":choice.finish_reason,
+                        "index":choice.index
+                    } for choice in chunk.choices
+                ],
+                "created":chunk.created,
+                "id":chunk.id,
+                "model":chunk.model,
+                "object":chunk.object
+            }
+            
+            if chunk_dict is not None:
+                chunk_json = json.dumps(chunk_dict)
+                chunk_sse = f"data: {chunk_json}\n\n"
+                print(chunk_sse)
+                yield chunk_sse.encode()
+            else:
+                break
+
+
+    except Exception as e:
+        print(f"Error calling EdgenAI API: {e}")
+        error_message = json.dumps({
+            "error": "Error generating response",
+            "details": str(e)
+        })
+        yield error_message
+
+
+
+
+async def call_edgen_stream(prompt):
+    global messages
     """Call the Edgen API and stream the response."""
     try:
         completion = client.chat.completions.create(
@@ -197,16 +196,19 @@ def call_edgen_stream(prompt):
             
             # Convert the dictionary to a JSON string and then to bytes
             chunk_json = json.dumps(chunk_dict)
-            yield chunk_json
-            
+            print(chunk_json)
+            await messages.put(chunk_json)     
+
+        # Signal the end of the stream
+        await messages.put("!It is the end!")
+
     except Exception as e:
         print(f"Error calling EdgenAI API: {e}")
-        error_message = {
+        error_message = json.dumps({
             "error": "Error generating response",
             "details": str(e)
-        }
-        yield json.dumps(error_message)
-
+        })
+        await messages.put(error_message)
 
 def qdrant_server_running() -> bool:
     """Check if Qdrant server is running."""
@@ -296,7 +298,7 @@ def _corsify_actual_response(response, plain_text=False):
     resp.headers.add("Access-Control-Allow-Origin", "*")
     return resp
 
-def call_edgen(prompt, stream=False):
+async def call_edgen(prompt, stream=False):
     try:
         completion = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -317,6 +319,6 @@ def call_edgen(prompt, stream=False):
 
 
 
-
-if __name__ == '__main__':
-    app.run(debug=True, host='localhost', port=9002)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=9003)
