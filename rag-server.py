@@ -26,7 +26,7 @@ client = Edgen()
 httpclient = http3.AsyncClient()
 qdrantclient = QdrantClient(url="http://localhost:6333")
 
-FILE_PATH = "bands.pdf"
+FILE_PATH = "sibs2.pdf"
 QDRANT_COLLECTION_NAME = FILE_PATH
 QUERY = "What is a cyber asset anyway?"
 TOP_K = 10
