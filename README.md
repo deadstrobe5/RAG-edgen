@@ -45,5 +45,5 @@ docker run -p 8000:8000 -d --rm --name unstructured-api downloads.unstructured.i
 After ensuring that both the Qdrant database and the unstructured-API server are running, you can start your RAG system. Ensure you have all necessary Python dependencies installed, and run your main script:
 
 ```bash
-python3 main_script.py
+python3 rag-server.py
 ```
