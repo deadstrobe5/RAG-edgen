@@ -20,7 +20,9 @@ import aiofiles
 from io import BytesIO
 import httpx
 from qdrant_client import QdrantClient
-
+import subprocess
+import json
+from shlex import quote
 
 
 app = FastAPI()
@@ -28,8 +30,8 @@ client = Edgen()
 httpclient = http3.AsyncClient()
 qdrantclient = QdrantClient(url="http://localhost:6333")
 
-QDRANT_COLLECTION_NAME = "canopy--sibs2"
-FILE_PATH = "sibs2.pdf"
+FILE_PATH = "sibs.pdf"
+QDRANT_COLLECTION_NAME = FILE_PATH
 QUERY = "What is a cyber asset anyway?"
 TOP_K = 10
 kb = None
@@ -54,22 +56,6 @@ async def chat_completions(request: Request):
     if kb == None:
         kb = await initialize_vectordb()
     return StreamingResponse(run_rag(QUERY, kb), media_type="text/event-stream")
-
-
-async def initialize_vectordb():
-    global kb
-    # Qdrant vector db
-    kb = await initialize_qdrant()
-   
-    # Create and insert documents
-    #print("Loading Documents...")
-    #json = await fetch_documents_from_unstructured(FILE_PATH)
-    #docs = await load_documents_from_json(json)
-    #kb.upsert(docs)
-
-    return kb
-
-
 
 async def run_rag(prompt, kb):
     # Prepare prompt for LLM
@@ -97,6 +83,8 @@ async def run_rag(prompt, kb):
     
     
     # Query the knowledge base
+    if kb is None:
+        raise ValueError("Knowledge base (kb) is not initialized.")
     query = Query(text=vector_query, top_k=TOP_K)
     query_results = kb.query([query])
 
@@ -172,44 +160,6 @@ async def run_rag(prompt, kb):
         })
         yield error_message
 
-
-
-async def qdrant_server_running() -> bool:
-    """Check if Qdrant server is running."""
-    try:
-        response = await httpclient.get("http://localhost:6333", timeout=10.0)
-        response_json = response.json()
-        return response_json.get("title") == "qdrant - vector search engine"
-    except:
-        return False
-
-  
-async def load_documents_from_json(data):
-    documents = []
-    for item in data:
-        # WAS HAVING PROBLEM WITH LINKS
-        metadata = item.get("metadata", {})
-        if 'links' in metadata:
-            if isinstance(metadata['links'], list):
-                # Join list into a string or perform other transformations as required
-                metadata['links'] = ', '.join(map(str, metadata['links']))
-            # Add more checks or transformations if needed
-        
-        document = Document(
-            id=item.get("element_id", ""),
-            text=item.get("text", ""),
-            source=item.get("type", ""),
-            metadata=metadata
-        )
-        documents.append(document)
-    
-    return documents
-
-
-import subprocess
-import json
-from shlex import quote
-
 async def fetch_documents_from_unstructured(file_path):
     url = 'http://localhost:8000/general/v0/general'
     file_path_escaped = quote(file_path)
@@ -238,13 +188,11 @@ async def fetch_documents_from_unstructured(file_path):
         print(f"Error fetching documents: {process.stderr}")
         return None
 
-
-async def initialize_qdrant():
-    global kb
+async def initialize_vectordb():
+    global k
     if not await qdrant_server_running():
         print("Qdrant server is not running. Please start the server and try again.")
         return None
-
 
     chunker = StubChunker(num_chunks_per_doc=1)
     dense_encoder = StubDenseEncoder(dimension=1000)  # Adjust if your encoder has a different dimension
@@ -257,17 +205,50 @@ async def initialize_qdrant():
         location="http://localhost:6333",  # Adjust if your Qdrant instance is hosted elsewhere
     )
 
-    # Create collection if it doesn't exist
+    # Check if collection exists, and create it if it doesn't
     try:
-        kb._client.get_collection(QDRANT_COLLECTION_NAME)
-    except Exception as e:  # You might want to catch a more specific exception if possible
+        await kb._client.get_collection(QDRANT_COLLECTION_NAME)
+    except Exception as e:  # Catch the specific exception
         print(f"Collection does not exist: {e}. Creating new collection.")
-        await kb.create_canopy_collection()
+        kb.create_canopy_collection()
+        print("Loading Documents...")
+        json = await fetch_documents_from_unstructured(FILE_PATH)
+        docs = await load_documents_from_json(json)
+        kb.upsert(docs)
+
+        return kb
 
     return kb
 
+async def qdrant_server_running() -> bool:
+    """Check if Qdrant server is running."""
+    try:
+        response = await httpclient.get("http://localhost:6333", timeout=10.0)
+        response_json = response.json()
+        return response_json.get("title") == "qdrant - vector search engine"
+    except:
+        return False
 
+async def load_documents_from_json(data):
+    documents = []
+    for item in data:
+        # WAS HAVING PROBLEM WITH LINKS
+        metadata = item.get("metadata", {})
+        if 'links' in metadata:
+            if isinstance(metadata['links'], list):
+                # Join list into a string or perform other transformations as required
+                metadata['links'] = ', '.join(map(str, metadata['links']))
+            # Add more checks or transformations if needed
+        
+        document = Document(
+            id=item.get("element_id", ""),
+            text=item.get("text", ""),
+            source=item.get("type", ""),
+            metadata=metadata
+        )
+        documents.append(document)
 
+    return documents
 
 async def call_edgen(prompt, stream=False):
     try:
@@ -287,7 +268,6 @@ async def call_edgen(prompt, stream=False):
     except Exception as e:  # Catch a general exception as the specific OpenAIError is not available
         print(f"Error calling EdgenAI API: {e}")
         return None
-
 
 
 if __name__ == "__main__":
