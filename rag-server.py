@@ -30,7 +30,7 @@ client = Edgen()
 httpclient = http3.AsyncClient()
 qdrantclient = QdrantClient(url="http://localhost:6333")
 
-FILE_PATH = "sibs.pdf"
+FILE_PATH = "bands.pdf"
 QDRANT_COLLECTION_NAME = FILE_PATH
 QUERY = "What is a cyber asset anyway?"
 TOP_K = 10
@@ -51,13 +51,14 @@ async def chat_completions(request: Request):
     global QUERY
     global kb
     data = await request.json()
+    history = data.get('messages', '')[:-1]
     QUERY = data.get('messages', '')[-1]["content"]
     print(f"User input: {QUERY}")
     if kb == None:
         kb = await initialize_vectordb()
-    return StreamingResponse(run_rag(QUERY, kb), media_type="text/event-stream")
+    return StreamingResponse(run_rag(QUERY, kb, history), media_type="text/event-stream")
 
-async def run_rag(prompt, kb):
+async def run_rag(prompt, kb, history):
     # Prepare prompt for LLM
     prompt = (
         "Objective: Process a natural language query to identify and extract its core informational intent, "
@@ -112,19 +113,18 @@ async def run_rag(prompt, kb):
     )
 
 
-    print(final_prompt)
+    #print(final_prompt)
     
     """Call the Edgen API and stream the response."""
     try:
+        history.append({"role": "user", "content": final_prompt})
         completion = client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": final_prompt}
-            ],
+            messages=history,
             stream=True
         )
 
+        print("Answer:")
         for chunk in completion:
             
             # Assuming chunk is an object with the structure you provided, construct the dictionary
@@ -146,6 +146,7 @@ async def run_rag(prompt, kb):
             
             if chunk_dict is not None:
                 chunk_json = json.dumps(chunk_dict)
+                print(chunk_dict["choices"][0]["delta"]["content"], end='')
                 chunk_sse = f"data: {chunk_json}\n\n"
                 yield chunk_sse.encode()
             else:
@@ -178,6 +179,11 @@ async def fetch_documents_from_unstructured(file_path):
 
     process = subprocess.run(curl_command, shell=True, text=True, capture_output=True)
 
+    # Check for "Connection refused" in stderr
+    if "Connection refused" in process.stderr:
+        print("Error: Connection refused. Unstructured-API might not be running.")
+        return None
+
     if process.returncode == 0:
         try:
             return json.loads(process.stdout)
@@ -207,16 +213,17 @@ async def initialize_vectordb():
 
     # Check if collection exists, and create it if it doesn't
     try:
-        await kb._client.get_collection(QDRANT_COLLECTION_NAME)
+        kb._client.get_collection(QDRANT_COLLECTION_NAME)
     except Exception as e:  # Catch the specific exception
         print(f"Collection does not exist: {e}. Creating new collection.")
         kb.create_canopy_collection()
+
+    # CHeck if collection is empty - if so, load documents to it
+    if (kb._client.count(QDRANT_COLLECTION_NAME).count == 0):
         print("Loading Documents...")
         json = await fetch_documents_from_unstructured(FILE_PATH)
         docs = await load_documents_from_json(json)
-        kb.upsert(docs)
-
-        return kb
+        await kb.aupsert(docs)
 
     return kb
 
