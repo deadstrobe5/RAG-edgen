@@ -4,3 +4,4 @@ requests
 edgen
 canopy-sdk
 qdrant_client
+aiofiles
