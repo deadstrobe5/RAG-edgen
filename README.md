@@ -33,12 +33,27 @@ This command pulls the Qdrant image from Docker Hub (if not already locally avai
 
 ### 3. Start the Unstructured-API Server
 
-Pull and run the unstructured-api server using Docker:
+#### Using Docker
 
+To initiate the Unstructured-API server, utilize Docker by executing the following commands:
 ```bash
 docker pull downloads.unstructured.io/unstructured-io/unstructured-api:latest
 docker run -p 8000:8000 -d --rm --name unstructured-api downloads.unstructured.io/unstructured-io/unstructured-api:latest --port 8000 --host 0.0.0.0
 ```
+
+#### Configuring Vector Sizes and Other Settings
+
+For specialized configurations, such as adjusting vector sizes, it's necessary to run the Unstructured-API directly, as the Docker image does not support these modifications.
+
+Execute these steps to clone the repository, install dependencies, and run the application:
+
+```bash
+git clone https://github.com/Unstructured-IO/unstructured-api
+cd unstructured-api
+make install
+make run-web-app
+```
+Note: Direct execution allows for more granular control over the Unstructured-API's configurations and parameters, suitable for custom and advanced setups.
 
 ### 4. Running Your RAG Implementation
 
