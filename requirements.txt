@@ -1,7 +1,6 @@
-flask
-flask-socketio
 requests
 edgen
 canopy-sdk
 qdrant_client
-aiofiles
+fastapi
+http3

@@ -14,11 +14,7 @@ from canopy.knowledge_base.qdrant.constants import COLLECTION_NAME_PREFIX
 from tests.unit.stubs.stub_record_encoder import StubRecordEncoder
 from tests.unit.stubs.stub_dense_encoder import StubDenseEncoder
 from tests.unit.stubs.stub_chunker import StubChunker
-import asyncio
 import http3
-import aiofiles
-from io import BytesIO
-import httpx
 from qdrant_client import QdrantClient
 import subprocess
 import json
